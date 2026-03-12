@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Kaell Remote Control</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-card: #16213e;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.3);
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+            padding-bottom: 100px;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            margin-right: 5px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        /* Voice Section */
+        .voice-section {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid var(--border);
+        }
+
+        .mic-button {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            color: white;
+            font-size: 2.5rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            box-shadow: 0 0 30px var(--accent-glow);
+            transition: all 0.3s ease;
+        }
+
+        .mic-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 50px var(--accent-glow);
+        }
+
+        .mic-button.listening {
+            animation: listening 1s infinite;
+            background: linear-gradient(135deg, #ef4444, #f59e0b);
+        }
+
+        @keyframes listening {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+        }
+
+        .voice-status {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Text Input */
+        .text-input-section {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .text-input {
+            flex: 1;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 15px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            outline: none;
+        }
+
+        .text-input:focus {
+            border-color: var(--accent);
+        }
+
+        .send-button {
+            background: var(--accent);
+            border: none;
+            border-radius: 12px;
+            padding: 15px 20px;
+            color: white;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .send-button:hover {
+            background: #5558e3;
+        }
+
+        /* Quick Actions */
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .quick-actions {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 25px;
+            border: 1px solid var(--border);
+        }
+
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .action-btn {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 15px;
+            padding: 18px 10px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .action-btn .icon {
+            font-size: 1.5rem;
+        }
+
+        .action-btn.danger:hover {
+            background: var(--danger);
+            border-color: var(--danger);
+        }
+
+        .action-btn.warning:hover {
+            background: var(--warning);
+            border-color: var(--warning);
+        }
+
+        /* Response Area */
+        .response-area {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 25px;
+            border: 1px solid var(--border);
+            min-height: 100px;
+        }
+
+        .response-text {
+            color: var(--text-primary);
+            font-size: 1rem;
+            line-height: 1.6;
+        }
+
+        .response-text.empty {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        /* Apps Section */
+        .apps-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        .app-btn {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 15px 10px;
+            color: var(--text-primary);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .app-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .app-btn .icon {
+            font-size: 1.3rem;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 15px 25px;
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .toast.success {
+            border-color: var(--success);
+        }
+
+        .toast.error {
+            border-color: var(--danger);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎤 Kaell Remote</h1>
+            <p><span class="status-dot"></span>Terhubung ke Laptop</p>
+        </div>
+
+        <!-- Voice Input -->
+        <div class="voice-section">
+            <button class="mic-button" id="micBtn" onclick="toggleVoice()">🎙️</button>
+            <p class="voice-status" id="voiceStatus">Tap untuk bicara</p>
+
+            <div class="text-input-section">
+                <input type="text" class="text-input" id="textInput" placeholder="Ketik perintah..."
+                    onkeypress="handleKeyPress(event)">
+                <button class="send-button" onclick="sendTextCommand()">➤</button>
+            </div>
+        </div>
+
+        <!-- Quick Actions: Volume -->
+        <div class="quick-actions">
+            <div class="section-title">🔊 Volume</div>
+            <div class="action-grid">
+                <button class="action-btn" onclick="quickAction('volume_down')">
+                    <span class="icon">🔉</span>
+                    <span>Turun</span>
+                </button>
+                <button class="action-btn" onclick="quickAction('volume_mute')">
+                    <span class="icon">🔇</span>
+                    <span>Mute</span>
+                </button>
+                <button class="action-btn" onclick="quickAction('volume_up')">
+                    <span class="icon">🔊</span>
+                    <span>Naik</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Actions: Power -->
+        <div class="quick-actions">
+            <div class="section-title">⚡ Power</div>
+            <div class="action-grid">
+                <button class="action-btn" onclick="quickAction('lock')">
+                    <span class="icon">🔒</span>
+                    <span>Lock</span>
+                </button>
+                <button class="action-btn" onclick="quickAction('sleep')">
+                    <span class="icon">😴</span>
+                    <span>Sleep</span>
+                </button>
+                <button class="action-btn danger" onclick="quickAction('shutdown')">
+                    <span class="icon">⏻</span>
+                    <span>Shutdown</span>
+                </button>
+                <button class="action-btn warning" onclick="quickAction('restart')">
+                    <span class="icon">🔄</span>
+                    <span>Restart</span>
+                </button>
+                <button class="action-btn" onclick="quickAction('cancel_shutdown')">
+                    <span class="icon">❌</span>
+                    <span>Cancel</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Apps -->
+        <div class="quick-actions">
+            <div class="section-title">📱 Aplikasi</div>
+            <div class="apps-grid">
+                <button class="app-btn" onclick="sendCommand('buka notepad')">
+                    <span class="icon">📝</span>
+                    <span>Notepad</span>
+                </button>
+                <button class="app-btn" onclick="sendCommand('')">
+                    <span class="icon">🌐</span>
+                    <span>Chrome</span>
+                </button>
+                <button class="app-btn" onclick="sendCommand('buka explorer')">
+                    <span class="icon">📁</span>
+                    <span>Explorer</span>
+                </button>
+                <button class="app-btn" onclick="sendCommand('buka calculator')">
+                    <span class="icon">🧮</span>
+                    <span>Calc</span>
+                </button>
+                <button class="app-btn" onclick="sendCommand('buka youtube')">
+                    <span class="icon">▶️</span>
+                    <span>YouTube</span>
+                </button>
+                <button class="app-btn" onclick="sendCommand('buka spotify')">
+                    <span class="icon">🎵</span>
+                    <span>Spotify</span>
+                </button>
+                <button class="app-btn" onclick="sendCommand('buka vscode')">
+                    <span class="icon">💻</span>
+                    <span>VSCode</span>
+                </button>
+                <button class="app-btn" onclick="sendCommand('buka discord')">
+                    <span class="icon">💬</span>
+                    <span>Discord</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Response Area -->
+        <div class="response-area">
+            <div class="section-title">💬 Respons</div>
+            <p class="response-text empty" id="responseText">Respons akan muncul di sini...</p>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let recognition = null;
+        let isListening = false;
+
+        // Initialize Speech Recognition
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'id-ID';
+
+            recognition.onstart = function () {
+                isListening = true;
+                document.getElementById('micBtn').classList.add('listening');
+                document.getElementById('voiceStatus').textContent = 'Mendengarkan...';
+            };
+
+            recognition.onend = function () {
+                isListening = false;
+                document.getElementById('micBtn').classList.remove('listening');
+                document.getElementById('voiceStatus').textContent = 'Tap untuk bicara';
+            };
+
+            recognition.onresult = function (event) {
+                const transcript = event.results[0][0].transcript;
+                document.getElementById('textInput').value = transcript;
+                sendCommand(transcript);
+            };
+
+            recognition.onerror = function (event) {
+                console.error('Speech recognition error:', event.error);
+                showToast('Error: ' + event.error, 'error');
+            };
+        }
+
+        function toggleVoice() {
+            if (!recognition) {
+                showToast('Browser tidak mendukung voice recognition', 'error');
+                return;
+            }
+
+            if (isListening) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendTextCommand();
+            }
+        }
+
+        function sendTextCommand() {
+            const input = document.getElementById('textInput');
+            const command = input.value.trim();
+            if (command) {
+                sendCommand(command);
+                input.value = '';
+            }
+        }
+
+        async function sendCommand(command) {
+            try {
+                const response = await fetch('/api/command', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ command: command, speak: true })
+                });
+
+                const data = await response.json();
+
+                const responseText = document.getElementById('responseText');
+                responseText.textContent = data.message || 'Tidak ada respons';
+                responseText.classList.remove('empty');
+
+                showToast(data.message, data.success ? 'success' : 'error');
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('Gagal mengirim perintah', 'error');
+            }
+        }
+
+        async function quickAction(action) {
+            try {
+                const response = await fetch(`/api/quick/${action}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                const responseText = document.getElementById('responseText');
+                responseText.textContent = data.message || 'Tidak ada respons';
+                responseText.classList.remove('empty');
+
+                showToast(data.message, data.success ? 'success' : 'error');
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('Gagal mengirim perintah', 'error');
+            }
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+
+</html>
