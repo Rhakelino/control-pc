@@ -36,6 +36,13 @@ ai_chat = None
 last_power_plugged = None  # Track charger status for alerts
 battery_100_alerted = False  # Prevent spam when battery full
 
+# System Health Guardian State
+last_cpu_alert_time = 0  # Prevent alert spam (timestamp)
+last_ram_alert_time = 0  # Prevent alert spam
+last_disk_alert_time = 0  # Prevent alert spam
+ALERT_COOLDOWN = 300  # 5 minutes between same alerts
+last_daily_report_date = None  # Track last daily report
+
 # Remote File Explorer Configuration
 # Default folder saat pertama kali (bisa diubah dengan /cd)
 DEFAULT_EXPLORER_DIR = os.path.expanduser("~/Documents")
@@ -149,7 +156,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id):
         await unauthorized_response(update)
         return
-    
+
     await update.message.reply_text(
         "📚 *Panduan Kaell Assistant*\n\n"
         "*Perintah Suara/Teks:*\n"
@@ -180,7 +187,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/ambil [file] - Ambil file\n\n"
         "*Camera & Screen:*\n"
         "/foto - Ambil foto webcam\n"
-        "/ss - Screenshot layar",
+        "/ss - Screenshot layar\n\n"
+        "*📊 Auto Monitoring:*\n"
+        "_Bot otomatis mengirim alert:_\n"
+        "• 🌅 Daily report (7 pagi)\n"
+        "• 🔴 CPU >80%\n"
+        "• 🔴 RAM >80%\n"
+        "• 🔴 Disk >90%",
         parse_mode="Markdown"
     )
 
@@ -257,7 +270,12 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📸 *CAMERA & SCREEN*\n"
         "• `/foto` - Ambil foto webcam\n"
         "• `/ss` - Screenshot layar pc\n\n"
-        
+        "📊 *AUTO MONITORING (Active 24/7)*\n"
+        "• 🌅 Daily System Report (7 pagi)\n"
+        "• 🔴 Alert saat CPU >80%\n"
+        "• 🔴 Alert saat RAM >80%\n"
+        "• 🔴 Alert saat Disk >90%\n"
+        "• 🔋 Battery monitoring & alerts\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "🎤 Kirim pesan untuk mulai!",
         parse_mode="Markdown"
@@ -1221,90 +1239,191 @@ async def process_quick_action(action: str) -> str:
     return "❓ Unknown action"
 
 
-# ============ Power Guardian Background Job ============
+# ============ Power Guardian & System Health Background Job ============
 
 async def power_guardian_check(context: ContextTypes.DEFAULT_TYPE):
-    """Background job to monitor battery and send alerts"""
+    """Background job to monitor battery and system health (CPU, RAM, Disk)"""
     global last_power_plugged, battery_100_alerted
-    
+    global last_cpu_alert_time, last_ram_alert_time, last_disk_alert_time
+    global last_daily_report_date
+
     # Only send to authorized users
     if not TELEGRAM_ALLOWED_USER_IDS:
         return  # No users configured
-    
+
+    import time
+    from datetime import datetime
+
+    current_time = time.time()
+    today = datetime.now().date()
+
     try:
+        # ========== BATTERY MONITORING ==========
         battery = psutil.sensors_battery()
-        if not battery:
-            return  # No battery (desktop PC)
+        if battery:
+            current_plugged = battery.power_plugged
+
+            # Alert 1: Charger disconnected (mati lampu/tercabut)
+            if last_power_plugged is not None and last_power_plugged and not current_plugged:
+                for user_id in TELEGRAM_ALLOWED_USER_IDS:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"🔴 *CHARGER DISCONNECTED!*\n\n"
+                                 f"⚡ Charger terlepas/mati!\n"
+                                 f"🔋 Baterai: `{battery.percent}%`\n\n"
+                                 f"_Mungkin mati lampu atau charger tercabut._",
+                            parse_mode="Markdown"
+                        )
+                    except Exception as e:
+                        print(f"Failed to send power alert to {user_id}: {e}")
+
+            # Alert 1b: Charger connected (listrik nyala/charger dipasang)
+            if last_power_plugged is not None and not last_power_plugged and current_plugged:
+                for user_id in TELEGRAM_ALLOWED_USER_IDS:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"🟢 *CHARGER CONNECTED!*\n\n"
+                                 f"⚡ Charger terpasang!\n"
+                                 f"🔋 Baterai: `{battery.percent}%`\n\n"
+                                 f"_Laptop sedang mengisi daya._",
+                            parse_mode="Markdown"
+                        )
+                    except Exception as e:
+                        print(f"Failed to send charger connected alert to {user_id}: {e}")
+
+            # Alert 2: Battery 100% while charging
+            if battery.percent == 100 and current_plugged and not battery_100_alerted:
+                battery_100_alerted = True
+                for user_id in TELEGRAM_ALLOWED_USER_IDS:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"🟢 *BATTERY FULL!*\n\n"
+                                 f"🔋 Baterai sudah `100%`!\n"
+                                 f"⚡ Cabut charger untuk menjaga kesehatan baterai.\n\n"
+                                 f"_Atau aktifkan Smart Plug untuk auto-disconnect._",
+                            parse_mode="Markdown"
+                        )
+                    except Exception as e:
+                        print(f"Failed to send battery full alert to {user_id}: {e}")
+
+            # Reset alert flag when battery drops below 100
+            if battery.percent < 100:
+                battery_100_alerted = False
+
+            # Alert 3: Low battery warning (20%)
+            if battery.percent <= 20 and not current_plugged:
+                for user_id in TELEGRAM_ALLOWED_USER_IDS:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"⚠️ *LOW BATTERY WARNING!*\n\n"
+                                 f"🔋 Baterai tinggal `{battery.percent}%`!\n"
+                                 f"🔌 Segera pasang charger!",
+                            parse_mode="Markdown"
+                        )
+                    except Exception as e:
+                        print(f"Failed to send low battery alert to {user_id}: {e}")
+
+            # Update state
+            last_power_plugged = current_plugged
+
+        # ========== SYSTEM HEALTH MONITORING ==========
         
-        current_plugged = battery.power_plugged
-        
-        # Alert 1: Charger disconnected (mati lampu/tercabut)
-        if last_power_plugged is not None and last_power_plugged and not current_plugged:
+        # CPU Usage Check (>80%)
+        cpu_percent = psutil.cpu_percent(interval=0.5)
+        if cpu_percent > 80 and (current_time - last_cpu_alert_time) > ALERT_COOLDOWN:
+            last_cpu_alert_time = current_time
             for user_id in TELEGRAM_ALLOWED_USER_IDS:
                 try:
                     await context.bot.send_message(
                         chat_id=user_id,
-                        text=f"🔴 *CHARGER DISCONNECTED!*\n\n"
-                             f"⚡ Charger terlepas/mati!\n"
-                             f"🔋 Baterai: `{battery.percent}%`\n\n"
-                             f"_Mungkin mati lampu atau charger tercabut._",
+                        text=f"🔴 *HIGH CPU USAGE!*\n\n"
+                             f"🚀 CPU Load: `{cpu_percent}%`\n\n"
+                             f"_CPU usage sangat tinggi! Pertimbangkan untuk menutup aplikasi yang berat._",
                         parse_mode="Markdown"
                     )
                 except Exception as e:
-                    print(f"Failed to send power alert to {user_id}: {e}")
-        
-        # Alert 1b: Charger connected (listrik nyala/charger dipasang)
-        if last_power_plugged is not None and not last_power_plugged and current_plugged:
+                    print(f"Failed to send CPU alert to {user_id}: {e}")
+
+        # RAM Usage Check (>80%)
+        ram = psutil.virtual_memory()
+        if ram.percent > 80 and (current_time - last_ram_alert_time) > ALERT_COOLDOWN:
+            last_ram_alert_time = current_time
+            ram_used_gb = ram.used / (1024**3)
+            ram_total_gb = ram.total / (1024**3)
             for user_id in TELEGRAM_ALLOWED_USER_IDS:
                 try:
                     await context.bot.send_message(
                         chat_id=user_id,
-                        text=f"🟢 *CHARGER CONNECTED!*\n\n"
-                             f"⚡ Charger terpasang!\n"
-                             f"🔋 Baterai: `{battery.percent}%`\n\n"
-                             f"_Laptop sedang mengisi daya._",
+                        text=f"🔴 *HIGH RAM USAGE!*\n\n"
+                             f"🧠 RAM: `{ram.percent}%` ({ram_used_gb:.1f}/{ram_total_gb:.1f} GB)\n\n"
+                             f"_RAM hampir penuh! Pertimbangkan untuk menutup aplikasi yang tidak digunakan._",
                         parse_mode="Markdown"
                     )
                 except Exception as e:
-                    print(f"Failed to send charger connected alert to {user_id}: {e}")
-        
-        # Alert 2: Battery 100% while charging
-        if battery.percent == 100 and current_plugged and not battery_100_alerted:
-            battery_100_alerted = True
+                    print(f"Failed to send RAM alert to {user_id}: {e}")
+
+        # Disk Usage Check (>90%)
+        disk = psutil.disk_usage('C:/')
+        if disk.percent > 90 and (current_time - last_disk_alert_time) > ALERT_COOLDOWN:
+            last_disk_alert_time = current_time
+            disk_used_gb = disk.used / (1024**3)
+            disk_total_gb = disk.total / (1024**3)
+            disk_free_gb = disk.free / (1024**3)
             for user_id in TELEGRAM_ALLOWED_USER_IDS:
                 try:
                     await context.bot.send_message(
                         chat_id=user_id,
-                        text=f"🟢 *BATTERY FULL!*\n\n"
-                             f"🔋 Baterai sudah `100%`!\n"
-                             f"⚡ Cabut charger untuk menjaga kesehatan baterai.\n\n"
-                             f"_Atau aktifkan Smart Plug untuk auto-disconnect._",
+                        text=f"🔴 *DISK ALMOST FULL!*\n\n"
+                             f"💾 Disk C: `{disk.percent}%` ({disk_used_gb:.0f}/{disk_total_gb:.0f} GB)\n"
+                             f"_Free space: `{disk_free_gb:.0f} GB`_\n\n"
+                             f"_Segera bersihkan file tidak diperlukan!_",
                         parse_mode="Markdown"
                     )
                 except Exception as e:
-                    print(f"Failed to send battery full alert to {user_id}: {e}")
-        
-        # Reset alert flag when battery drops below 100
-        if battery.percent < 100:
-            battery_100_alerted = False
-        
-        # Alert 3: Low battery warning (20%)
-        if battery.percent <= 20 and not current_plugged:
+                    print(f"Failed to send disk alert to {user_id}: {e}")
+
+        # ========== DAILY REPORT (7 AM) ==========
+        current_hour = datetime.now().hour
+        if current_hour == 7 and last_daily_report_date != today:
+            last_daily_report_date = today
+            
+            # Get GPU info if available
+            gpu_info = ""
+            if GPU_AVAILABLE:
+                try:
+                    gpus = GPUtil.getGPUs()
+                    if gpus:
+                        for i, gpu in enumerate(gpus):
+                            gpu_info += f"🎮 GPU{i}: `{gpu.temperature}°C` | Load: `{gpu.load*100:.0f}%`\n"
+                except Exception:
+                    gpu_info = "🎮 GPU: `Unable to read`\n"
+            
             for user_id in TELEGRAM_ALLOWED_USER_IDS:
                 try:
                     await context.bot.send_message(
                         chat_id=user_id,
-                        text=f"⚠️ *LOW BATTERY WARNING!*\n\n"
-                             f"🔋 Baterai tinggal `{battery.percent}%`!\n"
-                             f"🔌 Segera pasang charger!",
+                        text=f"🌅 *GOOD MORNING! Daily System Report*\n"
+                             f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                             f"📅 {datetime.now().strftime('%A, %d %B %Y')}\n\n"
+                             f"⚡ *POWER STATUS*\n"
+                             f"{'🔋 Battery: `' + str(battery.percent) + '%` ' + ('⚡ Charging' if battery.power_plugged else '🔋 Discharging') if battery else '🔋 Battery: `N/A (Desktop)`'}\n\n"
+                             f"🖥️ *SYSTEM HEALTH*\n"
+                             f"🚀 CPU: `{cpu_percent}%`\n"
+                             f"🧠 RAM: `{ram.percent}%` ({ram.used/(1024**3):.1f}/{ram.total/(1024**3):.1f} GB)\n"
+                             f"💾 Disk C: `{disk.percent}%` ({disk.free/(1024**3):.0f} GB free)\n"
+                             f"{gpu_info if gpu_info else ''}\n"
+                             f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                             f"✅ Sistem berjalan optimal!\n"
+                             f"_Have a great day!_",
                         parse_mode="Markdown"
                     )
                 except Exception as e:
-                    print(f"Failed to send low battery alert to {user_id}: {e}")
-        
-        # Update state
-        last_power_plugged = current_plugged
-        
+                    print(f"Failed to send daily report to {user_id}: {e}")
+
     except Exception as e:
         print(f"Power guardian error: {e}")
 
@@ -1348,7 +1467,7 @@ def run_bot():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))  # Voice Command handler
     
-    # Setup Power Guardian background job (runs every 10 seconds)
+    # Setup Power Guardian & System Health background job (runs every 10 seconds)
     if TELEGRAM_ALLOWED_USER_IDS:
         app.job_queue.run_repeating(
             power_guardian_check,
@@ -1357,6 +1476,11 @@ def run_bot():
             name="power_guardian"
         )
         print("🛡️ Power Guardian enabled - monitoring battery status (10s interval)")
+        print("📊 System Health Auto-Report enabled:")
+        print("   • Daily report at 7 AM")
+        print("   • CPU alert when >80%")
+        print("   • RAM alert when >80%")
+        print("   • Disk alert when >90%")
     else:
         print("⚠️ Power Guardian disabled - no authorized users configured")
     
