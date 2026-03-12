@@ -8,8 +8,6 @@ import os
 import cv2
 import tempfile
 import psutil
-import speech_recognition as sr
-from pydub import AudioSegment
 
 try:
     import GPUtil
@@ -23,13 +21,11 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from commands.system_commands import SystemCommands
 from commands.command_parser import CommandParser, get_simple_response
-from speech.synthesizer import SpeechSynthesizer
 from config import TELEGRAM_BOT_TOKEN, GROQ_API_KEY, TELEGRAM_ALLOWED_USER_IDS
 
 # Initialize components
 commands = SystemCommands()
 parser = CommandParser()
-synthesizer = SpeechSynthesizer()
 ai_chat = None
 
 # Power Guardian State
@@ -116,7 +112,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # File & Voice & Cam
         [
             InlineKeyboardButton("📂 File", callback_data="file_ls"),
-            InlineKeyboardButton("📢 Speak", callback_data="speak_prompt"),
             InlineKeyboardButton("👁️ Eye", callback_data="kaell_eye"),
             InlineKeyboardButton("📸 Shot", callback_data="screenshot"),
         ],
@@ -140,7 +135,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💬 *AI Chat:* ketik apa saja!\n\n"
         
         "📂 *FILE:* `/cd` `/ls` `/ambil`\n"
-        "📢 *VOICE:* `/speak [pesan]`\n"
         "📸 *CAM:* `/foto` `/ss`\n\n"
         
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -466,42 +460,7 @@ async def pwd_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📍 Direktori saat ini:\n`{current}`", parse_mode="Markdown")
 
 
-async def speak_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /speak command - Voice broadcast through laptop speaker"""
-    if not is_authorized(update.effective_user.id):
-        await unauthorized_response(update)
-        return
-    
-    if not context.args:
-        await update.message.reply_text(
-            "📢 *Voice Broadcast*\n\n"
-            "Kirim pesan yang akan diucapkan melalui speaker laptop.\n\n"
-            "Contoh: `/speak Halo, siapa di sana?`",
-            parse_mode="Markdown"
-        )
-        return
-    
-    text_to_say = " ".join(context.args)
-    
-    # Limit text length
-    if len(text_to_say) > 500:
-        await update.message.reply_text("⚠️ Pesan terlalu panjang! Maksimal 500 karakter.")
-        return
-    
-    try:
-        # Send status
-        status_msg = await update.message.reply_text(f"🔊 Menyuarakan: _{text_to_say}_...", parse_mode="Markdown")
-        
-        # Use the synthesizer to speak (runs in background thread)
-        synthesizer.speak(text_to_say)
-        
-        # Wait a moment for the speech to start
-        await asyncio.sleep(1)
-        
-        await status_msg.edit_text(f"✅ Berhasil menyuarakan:\n_{text_to_say}_", parse_mode="Markdown")
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Gagal menyuarakan: `{e}`", parse_mode="Markdown")
+
 
 
 async def foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -595,6 +554,105 @@ async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Exit - will be restarted by batch file
     os._exit(0)
+
+
+async def task_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /task command - List running processes like task manager"""
+    if not is_authorized(update.effective_user.id):
+        await unauthorized_response(update)
+        return
+    
+    # Check sort parameter
+    sort_by = "memory"
+    if context.args and context.args[0].lower() in ["cpu", "ram", "memory"]:
+        sort_by = "cpu" if context.args[0].lower() == "cpu" else "memory"
+    
+    status_msg = await update.message.reply_text("⏳ Mengambil daftar proses...")
+    
+    try:
+        processes = commands.list_processes(sort_by=sort_by, limit=25)
+        
+        if not processes:
+            await status_msg.edit_text("❌ Tidak ada proses yang ditemukan.")
+            return
+        
+        # Calculate total memory
+        total_mem = sum(p['memory_mb'] for p in processes)
+        
+        sort_label = "RAM" if sort_by == "memory" else "CPU"
+        response = f"📊 *TASK MANAGER* (sort: {sort_label})\n"
+        response += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        for i, proc in enumerate(processes, 1):
+            # Truncate long names
+            name = proc['name'][:20]
+            mem = proc['memory_mb']
+            
+            # Size indicator
+            if mem > 500:
+                icon = "🔴"
+            elif mem > 100:
+                icon = "🟡"
+            else:
+                icon = "🟢"
+            
+            response += f"{icon} `{name}` — `{mem}MB` | PID: `{proc['pid']}`\n"
+        
+        response += f"\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        response += f"📦 Total RAM (top {len(processes)}): `{total_mem:.0f} MB`\n\n"
+        response += f"💡 *Tips:*\n"
+        response += f"• `/task cpu` — sort by CPU\n"
+        response += f"• `/kill [PID]` — matikan proses\n"
+        
+        await status_msg.edit_text(response, parse_mode="Markdown")
+        
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+
+
+async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /kill command - Kill a process by PID"""
+    if not is_authorized(update.effective_user.id):
+        await unauthorized_response(update)
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "💀 *Kill Process*\n\n"
+            "Gunakan: `/kill [PID]`\n"
+            "Contoh: `/kill 1234`\n\n"
+            "💡 Gunakan `/task` untuk melihat daftar PID.",
+            parse_mode="Markdown"
+        )
+        return
+    
+    try:
+        pid = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ PID harus berupa angka. Contoh: `/kill 1234`", parse_mode="Markdown")
+        return
+    
+    try:
+        proc = psutil.Process(pid)
+        proc_name = proc.name()
+        proc.terminate()
+        
+        # Wait a moment for graceful termination
+        try:
+            proc.wait(timeout=3)
+        except psutil.TimeoutExpired:
+            proc.kill()  # Force kill if not terminated
+        
+        await update.message.reply_text(
+            f"✅ Proses `{proc_name}` (PID: `{pid}`) berhasil dimatikan.",
+            parse_mode="Markdown"
+        )
+    except psutil.NoSuchProcess:
+        await update.message.reply_text(f"❌ Proses dengan PID `{pid}` tidak ditemukan.", parse_mode="Markdown")
+    except psutil.AccessDenied:
+        await update.message.reply_text(f"🚫 Akses ditolak untuk PID `{pid}`. Proses sistem tidak bisa dimatikan.", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Gagal mematikan proses: `{e}`", parse_mode="Markdown")
 
 
 def capture_webcam_photo():
@@ -795,86 +853,7 @@ async def send_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ Voice Note Handler ============
 
-async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle voice notes - Voice Command feature"""
-    # Check authorization
-    if not is_authorized(update.effective_user.id):
-        await unauthorized_response(update)
-        return
-    
-    # Send processing status
-    status_msg = await update.message.reply_text("👂 Kaell sedang mendengarkan pesanmu, Bos...")
-    
-    # Create temp file paths
-    ogg_path = os.path.join(tempfile.gettempdir(), f"kaell_vn_{update.message.voice.file_id}.ogg")
-    wav_path = os.path.join(tempfile.gettempdir(), f"kaell_vn_{update.message.voice.file_id}.wav")
-    
-    try:
-        # 1. Download voice note from Telegram
-        voice_file = await context.bot.get_file(update.message.voice.file_id)
-        await voice_file.download_to_drive(ogg_path)
-        
-        await status_msg.edit_text("🔄 Mengonversi audio...")
-        
-        # 2. Convert OGG to WAV (required for SpeechRecognition)
-        audio = AudioSegment.from_ogg(ogg_path)
-        audio.export(wav_path, format="wav")
-        
-        await status_msg.edit_text("🎙️ Memproses suara...")
-        
-        # 3. Speech-to-Text using Google Speech Recognition
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(wav_path) as source:
-            audio_data = recognizer.record(source)
-            # Use Indonesian language
-            text = recognizer.recognize_google(audio_data, language="id-ID")
-        
-        await status_msg.edit_text(f"🗣️ Kaell mendengar: _\"{text}\"_", parse_mode="Markdown")
-        
-        # 4. Process the command using existing parser
-        if ai_chat:
-            try:
-                intent = ai_chat.analyze_intent(text)
-                intent_type = intent.get('type', 'chat')
-                target = intent.get('target', '')
-            except Exception:
-                intent_type = 'chat'
-                target = ''
-        else:
-            intent = parser.parse(text.lower())
-            intent_type = intent.get('type', 'simple_chat')
-            target = intent.get('target', '')
-        
-        # 5. Execute the command
-        response = await process_intent(intent_type, target, text)
-        await update.message.reply_text(f"🎤 *Voice Command:*\n{response}", parse_mode="Markdown")
-        
-    except sr.UnknownValueError:
-        await status_msg.edit_text(
-            "❌ Kaell tidak bisa memahami suaramu, Bos.\n\n"
-            "_Tips: Bicara lebih jelas dan kurangi noise._",
-            parse_mode="Markdown"
-        )
-    except sr.RequestError as e:
-        await status_msg.edit_text(
-            f"❌ Gagal terhubung ke Google Speech.\n"
-            f"Pastikan internet tersambung.\n\n`{e}`",
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        await status_msg.edit_text(
-            f"❌ Gagal memproses voice note:\n`{e}`",
-            parse_mode="Markdown"
-        )
-    finally:
-        # Cleanup temp files
-        try:
-            if os.path.exists(ogg_path):
-                os.remove(ogg_path)
-            if os.path.exists(wav_path):
-                os.remove(wav_path)
-        except:
-            pass
+
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -983,15 +962,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    elif action == "speak_prompt":
-        await query.edit_message_text(
-            "📢 *Voice Broadcast*\n\n"
-            "Kirim pesan yang akan diucapkan melalui speaker laptop.\n\n"
-            "Contoh: `/speak Halo, siapa di sana?`\n"
-            "`/speak Jangan lupa makan siang!`",
-            parse_mode="Markdown"
-        )
-        return
+
     
     elif action == "kaell_eye":
         # Trigger webcam capture via callback
@@ -1074,7 +1045,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "*File Explorer:*\n"
             "• `/cd` `/ls` `/ambil`\n\n"
             "*Remote Control:*\n"
-            "• `/speak [pesan]` - voice\n"
+
             "• `/foto` - webcam\n"
             "• `/ss` - screenshot\n"
             "• `/refresh` - restart bot\n\n"
@@ -1208,12 +1179,10 @@ async def process_intent(intent_type: str, target: str, original_text: str) -> s
         if ai_chat:
             try:
                 chat_response = ai_chat.get_response(original_text)
-                synthesizer.speak(chat_response)
                 return f"💬 {chat_response}"
             except Exception:
                 pass
         simple_response = get_simple_response(original_text)
-        synthesizer.speak(simple_response)
         return f"💬 {simple_response}"
 
 
@@ -1459,13 +1428,14 @@ def run_bot():
     app.add_handler(CommandHandler("pwd", pwd_command))
     app.add_handler(CommandHandler("ls", list_files_command))
     app.add_handler(CommandHandler("ambil", send_file_command))
-    app.add_handler(CommandHandler("speak", speak_command))
+    app.add_handler(CommandHandler("task", task_command))
+    app.add_handler(CommandHandler("kill", kill_command))
     app.add_handler(CommandHandler("foto", foto_command))
     app.add_handler(CommandHandler("ss", screenshot_command))
     app.add_handler(CommandHandler("refresh", refresh_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(MessageHandler(filters.VOICE, handle_voice))  # Voice Command handler
+
     
     # Setup Power Guardian & System Health background job (runs every 10 seconds)
     if TELEGRAM_ALLOWED_USER_IDS:

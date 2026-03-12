@@ -6,6 +6,7 @@ Handles executing system commands like opening applications, volume control, and
 import subprocess
 import webbrowser
 import os
+import psutil
 from datetime import datetime
 from config import APP_MAPPINGS, WEBSITE_MAPPINGS
 
@@ -458,3 +459,66 @@ class SystemCommands:
             return True, "Layar dikunci"
         except Exception as e:
             return False, f"Gagal mengunci layar: {e}"
+    
+    # ============ Task Manager ============
+    
+    def list_processes(self, sort_by: str = "memory", limit: int = 25) -> list[dict]:
+        """
+        List running processes sorted by memory or CPU usage.
+        
+        Args:
+            sort_by: "memory" or "cpu"
+            limit: Max number of processes to return
+            
+        Returns:
+            list of dicts with process info
+        """
+        # System/background processes to hide
+        hidden_processes = {
+            "system", "registry", "smss.exe", "csrss.exe", "wininit.exe",
+            "services.exe", "lsass.exe", "svchost.exe", "fontdrvhost.exe",
+            "winlogon.exe", "dwm.exe", "conhost.exe", "sihost.exe",
+            "taskhostw.exe", "ctfmon.exe", "dllhost.exe", "wudfhost.exe",
+            "searchhost.exe", "runtimebroker.exe", "shellexperiencehost.exe",
+            "startmenuexperiencehost.exe", "textinputhost.exe",
+            "systemsettings.exe", "applicationframehost.exe",
+            "windowsinternal.composableshell.experiences.textinput.inputapp.exe",
+            "securityhealthservice.exe", "securityhealthsystray.exe",
+            "sgrmbroker.exe", "spoolsv.exe", "msdtc.exe", "dashost.exe",
+            "gamebarpresencewriter.exe", "lockapp.exe", "searchindexer.exe",
+            "searchprotocolhost.exe", "searchfilterhost.exe", "audiodg.exe",
+            "system idle process", "idle", "memory compression",
+        }
+        
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_info', 'status']):
+            try:
+                info = proc.info
+                name = info['name'].lower()
+                
+                # Skip hidden system processes
+                if name in hidden_processes:
+                    continue
+                
+                # Skip processes with no memory usage
+                mem = info['memory_info']
+                if mem is None or mem.rss < 1024 * 1024:  # Less than 1MB
+                    continue
+                
+                processes.append({
+                    'pid': info['pid'],
+                    'name': info['name'],
+                    'cpu': info['cpu_percent'] or 0,
+                    'memory_mb': round(mem.rss / (1024 * 1024), 1),
+                    'status': info['status'],
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        
+        # Sort
+        if sort_by == "cpu":
+            processes.sort(key=lambda p: p['cpu'], reverse=True)
+        else:
+            processes.sort(key=lambda p: p['memory_mb'], reverse=True)
+        
+        return processes[:limit]

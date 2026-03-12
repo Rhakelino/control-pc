@@ -1,15 +1,24 @@
 """
 Groq AI Chat Module
 Handles conversation with Groq AI (fast LLM inference)
+With Web Search capability for real-time information
 """
 
 from groq import Groq
 import json
 from config import GROQ_API_KEY, SYSTEM_PROMPT
 
+# Try to import web search
+try:
+    from duckduckgo_search import DDGS
+    WEB_SEARCH_AVAILABLE = True
+except ImportError:
+    WEB_SEARCH_AVAILABLE = False
+    print("⚠️ duckduckgo-search not installed, web search disabled")
+
 
 class GroqChat:
-    """Handles AI conversation using Groq"""
+    """Handles AI conversation using Groq with Web Search"""
     
     def __init__(self):
         if not GROQ_API_KEY:
@@ -22,9 +31,117 @@ class GroqChat:
         self.model = "llama-3.1-8b-instant"  # Fast and capable
         self.history = []
     
+    def _needs_web_search(self, user_input: str) -> bool:
+        """
+        Use AI to determine if the question needs real-time web information.
+        
+        Returns:
+            bool: True if web search is needed
+        """
+        if not WEB_SEARCH_AVAILABLE:
+            return False
+        
+        prompt = """Analisis apakah pertanyaan berikut MEMBUTUHKAN informasi terbaru/real-time dari internet.
+
+Jawab HANYA dengan "YA" atau "TIDAK".
+
+Butuh web search (jawab YA):
+- Pertanyaan tentang skor pertandingan, hasil kompetisi terkini
+- Berita terbaru atau peristiwa terkini
+- Harga saham/crypto/kurs saat ini
+- Cuaca saat ini
+- Informasi yang berubah-ubah (jadwal, event, trending)
+- Pertanyaan dengan kata "tadi", "kemarin", "hari ini", "terbaru", "sekarang", "tadi malam"
+
+TIDAK butuh web search (jawab TIDAK):
+- Pertanyaan pengetahuan umum (siapa penemu listrik, apa itu DNA)
+- Pertanyaan opini atau saran
+- Obrolan biasa (halo, apa kabar)
+- Pertanyaan tentang kemampuan asisten
+- Pertanyaan matematika atau logika
+- Pertanyaan definisi atau konsep
+
+Pertanyaan: "{}"
+""".format(user_input)
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=10
+            )
+            
+            result = response.choices[0].message.content.strip().upper()
+            return "YA" in result
+        except Exception as e:
+            print(f"⚠️ Error checking web search need: {e}")
+            return False
+    
+    def _generate_search_query(self, user_input: str) -> str:
+        """
+        Use AI to generate an optimal search query from user input.
+        
+        Returns:
+            str: Optimized search query
+        """
+        prompt = f"""Buat search query yang optimal untuk mencari di internet berdasarkan pertanyaan user.
+Jawab HANYA dengan search query-nya saja, tanpa penjelasan.
+Gunakan bahasa yang sesuai konteks (Indonesia atau Inggris).
+
+Contoh:
+- "berapa skor madrid tadi malam" -> "Real Madrid match score results today"
+- "berita terbaru indonesia" -> "berita terbaru Indonesia hari ini"
+- "harga bitcoin sekarang" -> "Bitcoin price today USD"
+
+Pertanyaan user: "{user_input}"
+"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=50
+            )
+            
+            return response.choices[0].message.content.strip().strip('"')
+        except Exception:
+            # Fallback: use user input as search query
+            return user_input
+    
+    def _web_search(self, query: str, max_results: int = 5) -> str:
+        """
+        Search the web using DuckDuckGo.
+        
+        Args:
+            query: Search query
+            max_results: Maximum number of results
+            
+        Returns:
+            str: Formatted search results as context
+        """
+        try:
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=max_results))
+            
+            if not results:
+                return ""
+            
+            # Format results as context
+            context_parts = []
+            for i, result in enumerate(results, 1):
+                title = result.get('title', '')
+                body = result.get('body', '')
+                context_parts.append(f"{i}. {title}: {body}")
+            
+            return "\n".join(context_parts)
+        except Exception as e:
+            print(f"⚠️ Web search error: {e}")
+            return ""
+    
     def get_response(self, user_input: str) -> str:
         """
-        Get AI response for user input.
+        Get AI response for user input, with automatic web search when needed.
         
         Args:
             user_input: The user's message
@@ -33,14 +150,45 @@ class GroqChat:
             str: The AI's response
         """
         try:
+            # Check if web search is needed
+            web_context = ""
+            search_used = False
+            
+            if self._needs_web_search(user_input):
+                # Generate optimized search query
+                search_query = self._generate_search_query(user_input)
+                print(f"🔍 Web search: {search_query}")
+                
+                # Perform web search
+                web_context = self._web_search(search_query)
+                if web_context:
+                    search_used = True
+                    print(f"✅ Found web results")
+            
             # Add user message to history
             self.history.append({
                 "role": "user",
                 "content": user_input
             })
             
-            # Keep history manageable (last 10 messages)
+            # Build messages
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            
+            # If web search was used, inject context
+            if search_used:
+                web_prompt = (
+                    f"[INFO DARI INTERNET - Gunakan informasi ini untuk menjawab pertanyaan user]\n"
+                    f"{web_context}\n"
+                    f"[AKHIR INFO INTERNET]\n\n"
+                    f"Berdasarkan informasi di atas, jawab pertanyaan user dengan singkat dan jelas. "
+                    f"Sebutkan fakta-fakta penting dari hasil pencarian."
+                )
+                messages.append({
+                    "role": "system",
+                    "content": web_prompt
+                })
+            
+            # Keep history manageable (last 10 messages)
             messages.extend(self.history[-10:])
             
             # Generate response
@@ -48,10 +196,14 @@ class GroqChat:
                 model=self.model,
                 messages=messages,
                 temperature=0.7,
-                max_tokens=300
+                max_tokens=500  # Slightly more tokens for web-enriched answers
             )
             
             assistant_response = response.choices[0].message.content.strip()
+            
+            # Add search indicator if web was used
+            if search_used:
+                assistant_response = f"🌐 {assistant_response}"
             
             # Add assistant response to history
             self.history.append({

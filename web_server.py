@@ -12,7 +12,7 @@ from flask import Flask, render_template, jsonify, request, send_file
 from flask_cors import CORS
 from commands.system_commands import SystemCommands
 from commands.command_parser import get_simple_response
-from speech.synthesizer import SpeechSynthesizer
+
 from config import GROQ_API_KEY
 import psutil
 
@@ -35,7 +35,7 @@ except ImportError:
 app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)  # Enable CORS for React Native
 commands = SystemCommands()
-synthesizer = None
+
 ai_chat = None  # Will be initialized if API key is available
 
 
@@ -73,7 +73,7 @@ def index():
 @app.route('/api/command', methods=['POST'])
 def execute_command():
     """Execute a command from the web interface"""
-    global synthesizer, ai_chat
+    global ai_chat
     
     data = request.json
     command_text = data.get('command', '').strip()
@@ -236,15 +236,7 @@ def execute_command():
             result['message'] = get_simple_response(command_text)
             result['is_ai_chat'] = True
     
-    # Speak the response ONLY for AI chat responses (not for commands like volume, open app, etc.)
-    is_ai_chat = result.get('is_ai_chat', False)
-    if speak and result['message'] and is_ai_chat:
-        try:
-            if synthesizer is None:
-                synthesizer = SpeechSynthesizer()
-            synthesizer.speak(result['message'])
-        except Exception as e:
-            print(f"TTS Error: {e}")
+
     
     return jsonify(result)
 
@@ -252,7 +244,7 @@ def execute_command():
 @app.route('/api/quick/<action>', methods=['POST'])
 def quick_action(action):
     """Quick action buttons"""
-    global synthesizer
+
     
     actions = {
         'volume_up': commands.volume_up,

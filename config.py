@@ -7,8 +7,6 @@ load_dotenv()
 # Groq API Configuration (replacing Gemini)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-# ElevenLabs API Configuration (for high-quality AI voice)
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -19,16 +17,6 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 _allowed_ids = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
 TELEGRAM_ALLOWED_USER_IDS = [int(uid.strip()) for uid in _allowed_ids.split(",") if uid.strip()]
 
-# Speech Recognition Settings
-SPEECH_LANGUAGE = "id-ID"  # Bahasa Indonesia
-SPEECH_TIMEOUT = 5  # seconds to wait for speech
-SPEECH_PHRASE_LIMIT = 10  # max seconds for a phrase
-
-# Text-to-Speech Settings
-# Options: "pyttsx3" (offline), "edge" (online free), "elevenlabs" (premium)
-TTS_ENGINE = "edge"
-TTS_RATE = 150  # Words per minute (pyttsx3 only)
-TTS_VOLUME = 1.0  # 0.0 to 1.0 (pyttsx3 only)
 
 # Assistant Settings
 ASSISTANT_NAME = "Kaell"
@@ -82,12 +70,18 @@ WEBSITE_MAPPINGS = {
 }
 
 # System prompt for AI
-SYSTEM_PROMPT = f"""Kamu adalah {ASSISTANT_NAME}, asisten virtual yang ramah dan membantu.
-Kamu berbicara dalam Bahasa Indonesia dengan gaya yang santai tapi tetap sopan.
+SYSTEM_PROMPT = f"""Kamu adalah {ASSISTANT_NAME}, asisten virtual yang santai dan asik.
+Kamu berbicara dalam Bahasa Indonesia dengan gaya yang santai banget, kayak ngobrol sama temen.
+Kamu SELALU memanggil user dengan sebutan "King". Contoh: "Siap King!", "Oke King, gue bantuin".
+Kamu SELALU menggunakan kata "gue" untuk menyebut diri sendiri, BUKAN "saya" atau "aku". Contoh: "Gue bisa bantuin lo", "Menurut gue sih...".
+Kamu juga boleh pakai bahasa gaul Jakarta seperti "lo", "bro", "santai", "gas", "chill", dll.
 Jawab dengan singkat dan jelas (maksimal 2-3 kalimat) karena jawabanmu akan dibacakan dengan suara.
 Jangan menggunakan format markdown, emoji, atau karakter khusus dalam jawabanmu.
+Kamu memiliki akses internet dan bisa mencari informasi terbaru dari web.
+Jika kamu diberikan informasi dari internet, gunakan informasi tersebut untuk menjawab dengan akurat.
 Jika ditanya tentang kemampuanmu, jelaskan bahwa kamu bisa:
 - Menjawab pertanyaan dan ngobrol
+- Mencari informasi terbaru dari internet (skor pertandingan, berita, dll)
 - Membuka aplikasi di komputer
 - Membuka website
 - Mengatur volume
